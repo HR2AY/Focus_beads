@@ -12,7 +12,7 @@ export interface PixelData {
 
 // ==================== 状态类型定义 ====================
 
-type BoardState = 'IDLE' | 'PREVIEW' | 'BUILDING' | 'IRONING' | 'PREVIEWING' | 'COMPLETED';
+type BoardState = 'IDLE' | 'BUILDING' | 'IRONING' | 'PREVIEWING' | 'COMPLETED';
 
 interface BeadInstance {
   id: number;
@@ -39,10 +39,9 @@ interface BoardStateData {
 
 type Action =
   | { type: 'UPLOAD_IMAGE'; pixels: PixelData[] }
-  | { type: 'START_BUILDING' }
   | { type: 'UPDATE_PROGRESS'; percentage: number }
   | { type: 'START_IRONING' }
-  | { type: 'CANCEL_IRONING' }
+  | { type: 'CANCEL_IRONING'; completionPercentage: number }
   | { type: 'START_PREVIEW' }
   | { type: 'CANCEL_PREVIEW'; completionPercentage: number }
   | { type: 'UPDATE_IRON_PROGRESS'; progress: number }
@@ -62,17 +61,17 @@ const initialState: BoardStateData = {
 function boardReducer(state: BoardStateData, action: Action): BoardStateData {
   switch (action.type) {
     case 'UPLOAD_IMAGE': {
-      // 导入图纸：所有豆子不透明
+      // 导入图纸：直接进入拼豆状态，所有豆子初始隐藏（等待 UPDATE_PROGRESS 设置可见性）
       return {
         ...state,
-        state: 'PREVIEW',
+        state: 'BUILDING',
         beads: action.pixels.map((p, i) => ({
           id: i,
           x: p.x,
           y: p.y,
           color: p.color,
-          targetZ: 0,
-          targetOpacity: 1,
+          targetZ: -10,
+          targetOpacity: 0,
           isIroned: false,
         })),
         completionPercentage: 0,
@@ -81,59 +80,51 @@ function boardReducer(state: BoardStateData, action: Action): BoardStateData {
       };
     }
 
-    case 'START_BUILDING': {
-      // 开始拼豆：变为实体，等待下沉
-      return {
-        ...state,
-        state: 'BUILDING',
-        beads: state.beads.map(b => ({
-          ...b,
-          targetOpacity: 1,
-        })),
-      };
-    }
-
     case 'UPDATE_PROGRESS': {
-      // 计算应该下沉的豆子数量
-      const hiddenCount = Math.floor((action.percentage / 100) * state.beads.length);
-      
+      // 豆子显示占比与专注进度一致：进度越高，显示的豆子越多
+      const visibleCount = Math.floor((action.percentage / 100) * state.beads.length);
+
       return {
         ...state,
         state: action.percentage >= 100 ? 'COMPLETED' : 'BUILDING',
         completionPercentage: action.percentage,
         beads: state.beads.map((b, i) => ({
           ...b,
-          // 按索引顺序下沉：前面的先沉
-          targetZ: i < hiddenCount ? -10 : 0,
-          targetOpacity: i < hiddenCount ? 0 : 1,
+          targetZ: i < visibleCount ? 0 : -10,
+          targetOpacity: i < visibleCount ? 1 : 0,
         })),
       };
     }
 
     case 'START_IRONING': {
+      // 熨烫：只烫平当前可见部分的豆子，不改变可见性
       return {
         ...state,
         state: 'IRONING',
-        // 熨烫时豆板先消失，豆子稍后变形
         ironProgress: 0,
       };
     }
 
     case 'CANCEL_IRONING': {
+      // 取消熨烫 → 返回默认拼豆状态
+      const pct = action.completionPercentage;
+      const visibleCount = Math.floor((pct / 100) * state.beads.length);
       return {
         ...state,
-        state: state.completionPercentage >= 100 ? 'COMPLETED' : 'BUILDING',
+        state: pct >= 100 ? 'COMPLETED' : 'BUILDING',
         ironProgress: 0,
         boardOpacity: 0.8,
-        beads: state.beads.map(b => ({
+        beads: state.beads.map((b, i) => ({
           ...b,
+          targetZ: i < visibleCount ? 0 : -10,
+          targetOpacity: i < visibleCount ? 1 : 0,
           isIroned: false,
         })),
       };
     }
 
     case 'START_PREVIEW': {
-      // 预览：所有豆子可见 + 熨烫效果，隐藏豆板
+      // 预览：所有豆子可见 + 触发熨烫效果（展示完整且烫平的图案）
       return {
         ...state,
         state: 'PREVIEWING',
@@ -147,9 +138,9 @@ function boardReducer(state: BoardStateData, action: Action): BoardStateData {
     }
 
     case 'CANCEL_PREVIEW': {
-      // 取消预览：恢复到当前完成度的状态
+      // 取消预览 → 返回默认拼豆状态（按进度显示未烫豆子）
       const pct = action.completionPercentage;
-      const hiddenCount = Math.floor((pct / 100) * state.beads.length);
+      const visibleCount = Math.floor((pct / 100) * state.beads.length);
       return {
         ...state,
         state: pct >= 100 ? 'COMPLETED' : 'BUILDING',
@@ -157,8 +148,8 @@ function boardReducer(state: BoardStateData, action: Action): BoardStateData {
         boardOpacity: 0.8,
         beads: state.beads.map((b, i) => ({
           ...b,
-          targetZ: i < hiddenCount ? -10 : 0,
-          targetOpacity: i < hiddenCount ? 0 : 1,
+          targetZ: i < visibleCount ? 0 : -10,
+          targetOpacity: i < visibleCount ? 1 : 0,
           isIroned: false,
         })),
       };
@@ -167,16 +158,15 @@ function boardReducer(state: BoardStateData, action: Action): BoardStateData {
     case 'UPDATE_IRON_PROGRESS': {
       // 延迟变形：boardOpacity 降到 0.2 后豆子才开始变形
       const delayThreshold = 0.2;
-      const effectiveProgress = state.boardOpacity <= delayThreshold 
-        ? (delayThreshold - state.boardOpacity) / delayThreshold 
+      const effectiveProgress = state.boardOpacity <= delayThreshold
+        ? (delayThreshold - state.boardOpacity) / delayThreshold
         : 0;
-      
+
       return {
         ...state,
         ironProgress: action.progress,
         beads: state.beads.map(b => ({
           ...b,
-          // 只有当豆板几乎消失后，豆子才开始变形
           isIroned: effectiveProgress > 0.5,
         })),
       };
@@ -205,7 +195,6 @@ interface BeadsBoardProps {
   isIroned: boolean;
   isPreview?: boolean;
   isStarted?: boolean;
-  previewMode?: boolean;
   completionPercentage?: number;
   change?: number;
 }
@@ -288,7 +277,6 @@ export function BeadsBoard({
   isIroned: isIronedProp,
   isPreview: isPreviewProp = false,
   isStarted = false,
-  previewMode = false,
   completionPercentage = 0,
 }: BeadsBoardProps) {
   // 使用 useReducer 管理状态
@@ -331,30 +319,23 @@ export function BeadsBoard({
     dispatch({ type: 'UPLOAD_IMAGE', pixels });
   }, [pixels]);
 
-  // 2. 开始拼豆 → BUILDING
-  useEffect(() => {
-    if (isStarted && state.state === 'PREVIEW') {
-      dispatch({ type: 'START_BUILDING' });
-    }
-  }, [isStarted, state.state]);
-
-  // 3. 进度更新
+  // 2. 进度更新（仅在拼豆/完成状态下响应）
   useEffect(() => {
     if (state.state === 'BUILDING' || state.state === 'COMPLETED') {
       dispatch({ type: 'UPDATE_PROGRESS', percentage: completionPercentage });
     }
   }, [completionPercentage, state.state]);
 
-  // 4. 熨烫状态变化
+  // 3. 熨烫状态变化
   useEffect(() => {
     if (isIronedProp && state.state !== 'IRONING') {
       dispatch({ type: 'START_IRONING' });
     } else if (!isIronedProp && state.state === 'IRONING') {
-      dispatch({ type: 'CANCEL_IRONING' });
+      dispatch({ type: 'CANCEL_IRONING', completionPercentage });
     }
   }, [isIronedProp, state.state]);
 
-  // 4b. 预览状态变化
+  // 4. 预览状态变化
   useEffect(() => {
     if (isPreviewProp && state.state !== 'PREVIEWING') {
       dispatch({ type: 'START_PREVIEW' });

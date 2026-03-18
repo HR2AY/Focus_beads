@@ -7,7 +7,6 @@ interface Canvas3DProps {
   isPreview?: boolean;
   pixels?: PixelData[];
   isStarted?: boolean;
-  previewMode?: boolean;
   completionPercentage?: number;
   change?: number;
 }
@@ -17,7 +16,6 @@ export function Canvas3D({
   isPreview = false,
   pixels = [],
   isStarted = false,
-  previewMode = false,
   completionPercentage = 0,
   change = 0
 }: Canvas3DProps) {
@@ -41,7 +39,6 @@ export function Canvas3D({
         isIroned={isIroned}
         isPreview={isPreview}
         isStarted={isStarted}
-        previewMode={previewMode}
         completionPercentage={completionPercentage}
         change={change}
       />
