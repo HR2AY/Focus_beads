@@ -1,4 +1,6 @@
-import { Download, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { Download, Share2, Sparkles } from 'lucide-react';
+import { ShareModal } from './ShareModal';
 
 interface StatusBarProps {
   beadsUsed: number;
@@ -7,6 +9,7 @@ interface StatusBarProps {
   onExport: () => void;
   isIroned?: boolean;
   isPreviewMode?: boolean;
+  hasEverIroned?: boolean;
 }
 
 export function StatusBar({
@@ -16,7 +19,9 @@ export function StatusBar({
   onExport,
   isIroned = false,
   isPreviewMode = false,
+  hasEverIroned = false,
 }: StatusBarProps) {
+  const [shareModalOpen, setShareModalOpen] = useState(false);
   // 根据 change 计算动画中的豆子数量
   const beadsInAnimation = Math.abs(change) * 3;
   
@@ -80,21 +85,42 @@ export function StatusBar({
         </div>
       </div>
 
-      {/* Export Button */}
-      <button
-        onClick={onExport}
-        className="
-          w-full px-4 py-2.5 rounded-lg
-          flex items-center justify-center gap-2
-          bg-muted/10 text-foreground/80 border border-border/30
-          hover:bg-muted/20 hover:border-border/50
-          transition-all duration-300
-          group
-        "
-      >
-        <Download className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
-        <span className="text-sm">⏏️ 导出图纸</span>
-      </button>
+      {/* Action Buttons */}
+      <div className="flex gap-2">
+        <button
+          onClick={onExport}
+          className="
+            flex-1 px-3 py-2.5 rounded-lg
+            flex items-center justify-center gap-1.5
+            bg-muted/10 text-foreground/80 border border-border/30
+            hover:bg-muted/20 hover:border-border/50
+            transition-all duration-300
+            group
+          "
+        >
+          <Download className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
+          <span className="text-sm">导出图纸</span>
+        </button>
+        <button
+          onClick={() => setShareModalOpen(true)}
+          disabled={!hasEverIroned}
+          className="
+            flex-1 px-3 py-2.5 rounded-lg
+            flex items-center justify-center gap-1.5
+            bg-muted/10 text-foreground/80 border border-border/30
+            hover:bg-muted/20 hover:border-border/50
+            transition-all duration-300
+            group
+            disabled:opacity-40 disabled:cursor-not-allowed
+            disabled:hover:bg-muted/10 disabled:hover:border-border/30
+          "
+        >
+          <Share2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+          <span className="text-sm">分享成果</span>
+        </button>
+      </div>
+
+      <ShareModal open={shareModalOpen} onOpenChange={setShareModalOpen} />
     </div>
   );
 }

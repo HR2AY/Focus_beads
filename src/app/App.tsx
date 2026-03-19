@@ -32,6 +32,7 @@ export default function App() {
   
   const [isIroned, setIsIroned] = useState(false);
   const [isPreview, setIsPreview] = useState(false);
+  const [hasEverIroned, setHasEverIroned] = useState(false);
   const [beadsUsed, setBeadsUsed] = useState(0);
   const [change, setChange] = useState(0);
   const [pixels, setPixels] = useState<PixelData[]>([]);
@@ -229,6 +230,7 @@ export default function App() {
       // 开始熨烫：先取消预览（互斥）
       if (isPreview) setIsPreview(false);
       setIsIroned(true);
+      setHasEverIroned(true);
       toast.success('熨烫中', { description: '当前已拼好的豆子正在烫平 🔥' });
     }
   };
@@ -294,6 +296,7 @@ export default function App() {
         change={change}
         focusComment={focusComment}
         isPreviewMode={isPreview}
+        hasEverIroned={hasEverIroned}
         currentGoal={currentGoal}
         onFileUpload={handleFileUpload}
         onStartToggle={handleStartToggle}

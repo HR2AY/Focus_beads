@@ -19,6 +19,7 @@ interface ControlPanelProps {
   onPreviewToggle: () => void;
   onExport: () => void;
   isPreviewMode?: boolean;
+  hasEverIroned?: boolean;
 }
 
 export function ControlPanel({
@@ -37,6 +38,7 @@ export function ControlPanel({
   onPreviewToggle,
   onExport,
   isPreviewMode = false,
+  hasEverIroned = false,
 }: ControlPanelProps) {
   return (
     <div
@@ -85,6 +87,7 @@ export function ControlPanel({
         onExport={onExport}
         isIroned={isIroned}
         isPreviewMode={isPreviewMode}
+        hasEverIroned={hasEverIroned}
       />
     </div>
   );
