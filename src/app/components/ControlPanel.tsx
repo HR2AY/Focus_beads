@@ -2,6 +2,7 @@ import { BrandStatus } from './BrandStatus';
 import { ImageUploader } from './ImageUploader';
 import { ActionButtons } from './ActionButtons';
 import { StatusBar } from './StatusBar';
+import type { PixelData } from './BeadsBoard';
 
 interface ControlPanelProps {
   isConnected: boolean;
@@ -13,6 +14,7 @@ interface ControlPanelProps {
   change?: number;
   focusComment?: string;
   currentGoal?: string;
+  pixels?: PixelData[];
   onFileUpload: (file: File) => void;
   onStartToggle: () => void;
   onIronToggle: () => void;
@@ -33,6 +35,7 @@ export function ControlPanel({
   change = 0,
   focusComment = '',
   currentGoal = '',
+  pixels = [],
   onFileUpload,
   onStartToggle,
   onIronToggle,
@@ -91,6 +94,8 @@ export function ControlPanel({
         isIroned={isIroned}
         isPreviewMode={isPreviewMode}
         hasEverIroned={hasEverIroned}
+        pixels={pixels}
+        totalElapsedSeconds={totalElapsedSeconds}
       />
     </div>
   );

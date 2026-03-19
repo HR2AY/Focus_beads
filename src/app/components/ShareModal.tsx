@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -8,10 +8,15 @@ import {
   DialogFooter,
 } from './ui/dialog';
 import { toast } from 'sonner';
+import { generateShareImage, type ShareImageData } from '../../lib/shareImageGenerator';
+import type { PixelData } from './BeadsBoard';
 
 interface ShareModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  pixels: PixelData[];
+  totalElapsedSeconds: number;
+  beadsUsed: number;
 }
 
 const PROMPT_TEXT = `请阅读我上传的 CSV 日程文件，提取每个任务/活动，将其转换为简洁的中文短句描述。格式要求：
@@ -26,9 +31,16 @@ const PROMPT_TEXT = `请阅读我上传的 CSV 日程文件，提取每个任务
 【数据】
 <把CSV内容粘贴在这里>`;
 
-export function ShareModal({ open, onOpenChange }: ShareModalProps) {
+export function ShareModal({
+  open,
+  onOpenChange,
+  pixels,
+  totalElapsedSeconds,
+  beadsUsed,
+}: ShareModalProps) {
   const [text, setText] = useState('');
   const [copied, setCopied] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   const handleCopyPrompt = async () => {
     try {
@@ -41,9 +53,47 @@ export function ShareModal({ open, onOpenChange }: ShareModalProps) {
     }
   };
 
-  const handleConfirm = () => {
-    // 后续实现
-    onOpenChange(false);
+  const handleConfirm = async () => {
+    if (pixels.length === 0) {
+      toast.error('没有拼豆数据');
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const data: ShareImageData = {
+        durationSeconds: totalElapsedSeconds,
+        beadsUsed,
+        focusContent: text,
+        pixels,
+      };
+
+      const blob = await generateShareImage(data);
+
+      // 触发下载
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[:.]/g, '-')
+        .slice(0, 19);
+      link.download = `focusbeads-share-${timestamp}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success('分享图已生成', { description: '图片已保存到下载文件夹' });
+      onOpenChange(false);
+    } catch (error) {
+      console.error('Share image generation failed:', error);
+      toast.error('生成失败', {
+        description: '请确保 public/Template.png 底图文件存在',
+      });
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
@@ -95,26 +145,38 @@ export function ShareModal({ open, onOpenChange }: ShareModalProps) {
         <DialogFooter>
           <button
             onClick={() => onOpenChange(false)}
+            disabled={generating}
             className="
               px-4 py-2 rounded-lg text-sm
               bg-muted/10 text-foreground/70 border border-border/30
               hover:bg-muted/20 hover:text-foreground
               transition-all duration-200
+              disabled:opacity-40
             "
           >
             取消
           </button>
           <button
             onClick={handleConfirm}
+            disabled={generating}
             className="
               px-4 py-2 rounded-lg text-sm
               bg-gradient-to-r from-blue-500/20 to-cyan-500/20
               text-cyan-300 border border-cyan-500/30
               hover:from-blue-500/30 hover:to-cyan-500/30
               transition-all duration-200
+              disabled:opacity-60
+              flex items-center gap-1.5
             "
           >
-            确认
+            {generating ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>生成中...</span>
+              </>
+            ) : (
+              <span>确认</span>
+            )}
           </button>
         </DialogFooter>
       </DialogContent>

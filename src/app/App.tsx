@@ -317,6 +317,7 @@ export default function App() {
         isPreviewMode={isPreview}
         hasEverIroned={hasEverIroned}
         totalElapsedSeconds={totalElapsedSeconds}
+        pixels={pixels}
         currentGoal={currentGoal}
         onFileUpload={handleFileUpload}
         onStartToggle={handleStartToggle}

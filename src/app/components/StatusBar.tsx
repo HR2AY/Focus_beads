@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Download, Share2, Sparkles } from 'lucide-react';
 import { ShareModal } from './ShareModal';
+import type { PixelData } from './BeadsBoard';
 
 interface StatusBarProps {
   beadsUsed: number;
@@ -10,6 +11,8 @@ interface StatusBarProps {
   isIroned?: boolean;
   isPreviewMode?: boolean;
   hasEverIroned?: boolean;
+  pixels?: PixelData[];
+  totalElapsedSeconds?: number;
 }
 
 export function StatusBar({
@@ -20,6 +23,8 @@ export function StatusBar({
   isIroned = false,
   isPreviewMode = false,
   hasEverIroned = false,
+  pixels = [],
+  totalElapsedSeconds = 0,
 }: StatusBarProps) {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   // 根据 change 计算动画中的豆子数量
@@ -120,7 +125,13 @@ export function StatusBar({
         </button>
       </div>
 
-      <ShareModal open={shareModalOpen} onOpenChange={setShareModalOpen} />
+      <ShareModal
+        open={shareModalOpen}
+        onOpenChange={setShareModalOpen}
+        pixels={pixels}
+        totalElapsedSeconds={totalElapsedSeconds}
+        beadsUsed={beadsUsed}
+      />
     </div>
   );
 }
