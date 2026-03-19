@@ -13,6 +13,7 @@ const POLL_INTERVAL = 2000;
 export interface SaveData {
   version: string;
   completionPercentage: number;
+  time: number; // 累计用时（秒）
   pixels: { x: number; y: number; hex: string; }[];
 }
 
@@ -32,14 +33,14 @@ export default function App() {
   
   const [isIroned, setIsIroned] = useState(false);
   const [isPreview, setIsPreview] = useState(false);
+  const [hasEverIroned, setHasEverIroned] = useState(false);
   const [beadsUsed, setBeadsUsed] = useState(0);
   const [change, setChange] = useState(0);
   const [pixels, setPixels] = useState<PixelData[]>([]);
-  
+
   const [completionPercentage, setCompletionPercentage] = useState(0);
-  // 新增：预览模式状态
-  const [previewMode, setPreviewMode] = useState(false);
-  
+  const [totalElapsedSeconds, setTotalElapsedSeconds] = useState(0);
+
   const currentChangeRef = useRef<number>(0);
 
   useEffect(() => {
@@ -87,6 +88,15 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [beadsUsed]); // 依赖 beadsUsed 用于计算进度
 
+  // 计时器：引擎运行时每秒累加
+  useEffect(() => {
+    if (!focusEngineRunning) return;
+    const interval = setInterval(() => {
+      setTotalElapsedSeconds(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [focusEngineRunning]);
+
   const handleFileUpload = useCallback((file: File) => {
     if (file.type === 'application/json' || file.name.endsWith('.json')) {
       handleImportJSON(file);
@@ -105,14 +115,15 @@ export default function App() {
       const img = new Image();
       img.onload = () => {
         const newPixels = processImage(img);
+        // 导入图片：进度归零，进入默认拼豆状态
+        setIsIroned(false);
+        setIsPreview(false);
         setPixels(newPixels);
         setBeadsUsed(newPixels.length);
         setCompletionPercentage(0);
-        
-        // 核心修改：上传图片后，先进入半透明的预览模式
-        setPreviewMode(true);
-        
-        toast.success('图片处理完成', { description: `已转换为 ${newPixels.length} 颗拼豆，点击开始进入专注` });
+        setTotalElapsedSeconds(0);
+
+        toast.success('图片处理完成', { description: `已转换为 ${newPixels.length} 颗拼豆，开始专注后豆子会逐步出现` });
       };
       img.src = event.target?.result as string;
     };
@@ -136,15 +147,21 @@ export default function App() {
           x: p.x, y: p.y, color: new THREE.Color(`#${p.hex}`),
         }));
         
+        // 导入存档：读取内部储存的进度，进入默认拼豆状态
+        setIsIroned(false);
+        setIsPreview(false);
         setPixels(restoredPixels);
         setBeadsUsed(restoredPixels.length);
         setCompletionPercentage(Math.max(0, Math.min(100, data.completionPercentage)));
-        
-        // 核心修改：导入存档后不进入预览模式，直接展示真实进度
-        setPreviewMode(false);
-        
+        setTotalElapsedSeconds(typeof data.time === 'number' ? Math.max(0, Math.floor(data.time)) : 0);
+
+        const restoredTime = typeof data.time === 'number' ? data.time : 0;
+        const hrs = Math.floor(restoredTime / 3600);
+        const mins = Math.floor((restoredTime % 3600) / 60);
+        const secs = restoredTime % 60;
+        const timeStr = `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
         toast.success('存档导入成功', {
-          description: `已恢复 ${restoredPixels.length} 颗拼豆，专注进度 ${data.completionPercentage}%`,
+          description: `已恢复 ${restoredPixels.length} 颗拼豆，专注进度 ${data.completionPercentage}%，累计用时 ${timeStr}`,
         });
       } catch (error) {
         toast.error('存档导入失败', { description: error instanceof Error ? error.message : '文件损坏' });
@@ -196,8 +213,9 @@ export default function App() {
   };
 
   const handleStartToggle = async () => {
-    // 退出预览模式，实体化所有豆子准备开始
-    if (previewMode) setPreviewMode(false);
+    // 开始监控时，退出预览/熨烫，回到默认拼豆状态
+    if (isPreview) setIsPreview(false);
+    if (isIroned) setIsIroned(false);
 
     if (!focusEngineConnected) {
       toast.error('FocusAI 引擎未连接', { description: '请先启动 FocusOS 网关' });
@@ -222,16 +240,28 @@ export default function App() {
   };
 
   const handleIronToggle = () => {
-    setIsIroned(!isIroned);
-    if (!isIroned) {
-      toast.success('熨烫完成！', { description: '拼豆已融合成型 🔥' });
+    if (isIroned) {
+      // 取消熨烫 → 返回默认拼豆状态
+      setIsIroned(false);
+      toast.info('撤销熨烫', { description: '已恢复到拼豆中状态' });
     } else {
-      toast.info('撤销熨烫', { description: '已恢复到未熨烫状态' });
+      // 开始熨烫：先取消预览（互斥）
+      if (isPreview) setIsPreview(false);
+      setIsIroned(true);
+      setHasEverIroned(true);
+      toast.success('熨烫中', { description: '当前已拼好的豆子正在烫平 🔥' });
     }
   };
 
   const handlePreviewToggle = () => {
-    setIsPreview(!isPreview);
+    if (isPreview) {
+      // 取消预览 → 返回默认拼豆状态
+      setIsPreview(false);
+    } else {
+      // 开始预览：先取消熨烫（互斥）
+      if (isIroned) setIsIroned(false);
+      setIsPreview(true);
+    }
   };
 
   const handleExport = () => {
@@ -243,6 +273,7 @@ export default function App() {
       const saveData: SaveData = {
         version: '1.0.0',
         completionPercentage: completionPercentage,
+        time: totalElapsedSeconds,
         pixels: pixels.map(p => ({ x: p.x, y: p.y, hex: p.color.getHexString() })),
       };
       const jsonString = JSON.stringify(saveData, null, 2);
@@ -270,7 +301,6 @@ export default function App() {
         isPreview={isPreview}
         pixels={pixels}
         isStarted={focusEngineRunning}
-        previewMode={previewMode}
         completionPercentage={completionPercentage}
         change={change}
       />
@@ -284,7 +314,10 @@ export default function App() {
         completionPercentage={completionPercentage}
         change={change}
         focusComment={focusComment}
-        isPreviewMode={previewMode}
+        isPreviewMode={isPreview}
+        hasEverIroned={hasEverIroned}
+        totalElapsedSeconds={totalElapsedSeconds}
+        pixels={pixels}
         currentGoal={currentGoal}
         onFileUpload={handleFileUpload}
         onStartToggle={handleStartToggle}

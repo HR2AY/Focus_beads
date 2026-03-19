@@ -2,6 +2,7 @@ import { BrandStatus } from './BrandStatus';
 import { ImageUploader } from './ImageUploader';
 import { ActionButtons } from './ActionButtons';
 import { StatusBar } from './StatusBar';
+import type { PixelData } from './BeadsBoard';
 
 interface ControlPanelProps {
   isConnected: boolean;
@@ -13,12 +14,15 @@ interface ControlPanelProps {
   change?: number;
   focusComment?: string;
   currentGoal?: string;
+  pixels?: PixelData[];
   onFileUpload: (file: File) => void;
   onStartToggle: () => void;
   onIronToggle: () => void;
   onPreviewToggle: () => void;
   onExport: () => void;
   isPreviewMode?: boolean;
+  hasEverIroned?: boolean;
+  totalElapsedSeconds?: number;
 }
 
 export function ControlPanel({
@@ -31,12 +35,15 @@ export function ControlPanel({
   change = 0,
   focusComment = '',
   currentGoal = '',
+  pixels = [],
   onFileUpload,
   onStartToggle,
   onIronToggle,
   onPreviewToggle,
   onExport,
   isPreviewMode = false,
+  hasEverIroned = false,
+  totalElapsedSeconds = 0,
 }: ControlPanelProps) {
   return (
     <div
@@ -71,6 +78,7 @@ export function ControlPanel({
         isIroned={isIroned}
         isPreview={isPreview}
         isConnected={isConnected}
+        totalElapsedSeconds={totalElapsedSeconds}
         onStartToggle={onStartToggle}
         onIronToggle={onIronToggle}
         onPreviewToggle={onPreviewToggle}
@@ -85,6 +93,9 @@ export function ControlPanel({
         onExport={onExport}
         isIroned={isIroned}
         isPreviewMode={isPreviewMode}
+        hasEverIroned={hasEverIroned}
+        pixels={pixels}
+        totalElapsedSeconds={totalElapsedSeconds}
       />
     </div>
   );
