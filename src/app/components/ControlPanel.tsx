@@ -20,6 +20,7 @@ interface ControlPanelProps {
   onExport: () => void;
   isPreviewMode?: boolean;
   hasEverIroned?: boolean;
+  totalElapsedSeconds?: number;
 }
 
 export function ControlPanel({
@@ -39,6 +40,7 @@ export function ControlPanel({
   onExport,
   isPreviewMode = false,
   hasEverIroned = false,
+  totalElapsedSeconds = 0,
 }: ControlPanelProps) {
   return (
     <div
@@ -73,6 +75,7 @@ export function ControlPanel({
         isIroned={isIroned}
         isPreview={isPreview}
         isConnected={isConnected}
+        totalElapsedSeconds={totalElapsedSeconds}
         onStartToggle={onStartToggle}
         onIronToggle={onIronToggle}
         onPreviewToggle={onPreviewToggle}

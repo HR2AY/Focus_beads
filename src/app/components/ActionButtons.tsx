@@ -1,11 +1,11 @@
 import { Play, Pause, Flame, Undo2, Power, Eye, EyeOff } from 'lucide-react';
-import { useState, useEffect } from 'react';
 
 interface ActionButtonsProps {
   isStarted: boolean;
   isIroned: boolean;
   isPreview: boolean;
   isConnected?: boolean;
+  totalElapsedSeconds?: number;
   onStartToggle: () => void;
   onIronToggle: () => void;
   onPreviewToggle: () => void;
@@ -16,28 +16,16 @@ export function ActionButtons({
   isIroned,
   isPreview,
   isConnected = false,
+  totalElapsedSeconds = 0,
   onStartToggle,
   onIronToggle,
   onPreviewToggle,
 }: ActionButtonsProps) {
-  const [duration, setDuration] = useState(0);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isStarted) {
-      interval = setInterval(() => {
-        setDuration((prev) => prev + 1);
-      }, 1000);
-    } else {
-      setDuration(0);
-    }
-    return () => clearInterval(interval);
-  }, [isStarted]);
-
   const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -94,17 +82,17 @@ export function ActionButtons({
         {!isConnected ? (
           <>
             <Power className="w-4 h-4" />
-            <span>引擎未连接</span>
+            <span>{totalElapsedSeconds > 0 ? formatDuration(totalElapsedSeconds) : '引擎未连接'}</span>
           </>
         ) : isStarted ? (
           <>
             <Pause className="w-4 h-4" />
-            <span>{formatDuration(duration)}</span>
+            <span>{formatDuration(totalElapsedSeconds)}</span>
           </>
         ) : (
           <>
             <Play className="w-4 h-4" />
-            <span>开始监控</span>
+            <span>{totalElapsedSeconds > 0 ? formatDuration(totalElapsedSeconds) : '开始监控'}</span>
           </>
         )}
       </button>

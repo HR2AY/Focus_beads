@@ -13,6 +13,7 @@ const POLL_INTERVAL = 2000;
 export interface SaveData {
   version: string;
   completionPercentage: number;
+  time: number; // 累计用时（秒）
   pixels: { x: number; y: number; hex: string; }[];
 }
 
@@ -38,6 +39,7 @@ export default function App() {
   const [pixels, setPixels] = useState<PixelData[]>([]);
 
   const [completionPercentage, setCompletionPercentage] = useState(0);
+  const [totalElapsedSeconds, setTotalElapsedSeconds] = useState(0);
 
   const currentChangeRef = useRef<number>(0);
 
@@ -86,6 +88,15 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [beadsUsed]); // 依赖 beadsUsed 用于计算进度
 
+  // 计时器：引擎运行时每秒累加
+  useEffect(() => {
+    if (!focusEngineRunning) return;
+    const interval = setInterval(() => {
+      setTotalElapsedSeconds(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [focusEngineRunning]);
+
   const handleFileUpload = useCallback((file: File) => {
     if (file.type === 'application/json' || file.name.endsWith('.json')) {
       handleImportJSON(file);
@@ -110,6 +121,7 @@ export default function App() {
         setPixels(newPixels);
         setBeadsUsed(newPixels.length);
         setCompletionPercentage(0);
+        setTotalElapsedSeconds(0);
 
         toast.success('图片处理完成', { description: `已转换为 ${newPixels.length} 颗拼豆，开始专注后豆子会逐步出现` });
       };
@@ -141,9 +153,15 @@ export default function App() {
         setPixels(restoredPixels);
         setBeadsUsed(restoredPixels.length);
         setCompletionPercentage(Math.max(0, Math.min(100, data.completionPercentage)));
+        setTotalElapsedSeconds(typeof data.time === 'number' ? Math.max(0, Math.floor(data.time)) : 0);
 
+        const restoredTime = typeof data.time === 'number' ? data.time : 0;
+        const hrs = Math.floor(restoredTime / 3600);
+        const mins = Math.floor((restoredTime % 3600) / 60);
+        const secs = restoredTime % 60;
+        const timeStr = `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
         toast.success('存档导入成功', {
-          description: `已恢复 ${restoredPixels.length} 颗拼豆，专注进度 ${data.completionPercentage}%`,
+          description: `已恢复 ${restoredPixels.length} 颗拼豆，专注进度 ${data.completionPercentage}%，累计用时 ${timeStr}`,
         });
       } catch (error) {
         toast.error('存档导入失败', { description: error instanceof Error ? error.message : '文件损坏' });
@@ -255,6 +273,7 @@ export default function App() {
       const saveData: SaveData = {
         version: '1.0.0',
         completionPercentage: completionPercentage,
+        time: totalElapsedSeconds,
         pixels: pixels.map(p => ({ x: p.x, y: p.y, hex: p.color.getHexString() })),
       };
       const jsonString = JSON.stringify(saveData, null, 2);
@@ -297,6 +316,7 @@ export default function App() {
         focusComment={focusComment}
         isPreviewMode={isPreview}
         hasEverIroned={hasEverIroned}
+        totalElapsedSeconds={totalElapsedSeconds}
         currentGoal={currentGoal}
         onFileUpload={handleFileUpload}
         onStartToggle={handleStartToggle}
