@@ -29,6 +29,7 @@ interface FocusStatus {
 export default function App() {
   const [focusEngineConnected, setFocusEngineConnected] = useState(false);
   const [focusEngineRunning, setFocusEngineRunning] = useState(false);
+  const [isStarted, setIsStarted] = useState(false);           // 本地拼豆状态，独立于引擎
   const [focusComment, setFocusComment] = useState('');
   const [currentGoal, setCurrentGoal] = useState('');
   
@@ -42,7 +43,6 @@ export default function App() {
   const [completionPercentage, setCompletionPercentage] = useState(0);
   const [totalElapsedSeconds, setTotalElapsedSeconds] = useState(0);
 
-  const currentChangeRef = useRef<number>(0);
   const prevRunningRef = useRef<boolean>(false);
 
   // ==================== Web Worker 计时器 ====================
@@ -64,15 +64,15 @@ export default function App() {
     };
   }, []);
 
-  // 引擎运行状态变化时，启停 Worker 计时器
+  // 本地拼豆状态变化时，启停 Worker 计时器（独立于引擎）
   useEffect(() => {
     if (!timerWorkerRef.current) return;
-    if (focusEngineRunning) {
+    if (isStarted) {
       timerWorkerRef.current.postMessage({ type: 'start' });
     } else {
       timerWorkerRef.current.postMessage({ type: 'stop' });
     }
-  }, [focusEngineRunning]);
+  }, [isStarted]);
 
   // ==================== SSE 实时监听引擎状态 ====================
   const beadsUsedRef = useRef(beadsUsed);
@@ -87,18 +87,13 @@ export default function App() {
       setFocusEngineConnected(true);
       setFocusEngineRunning(data.running);
       setFocusComment(data.comment);
-      setCurrentGoal(data.current_goal);
-
-      // 检测引擎从停止变为运行：重置 changeRef 以确保能接收新的 change
-      if (data.running && !prevRunningRef.current) {
-        currentChangeRef.current = 0;
-      }
+      if (data.current_goal) setCurrentGoal(data.current_goal);
       prevRunningRef.current = data.running;
 
-      if (data.change !== 0 && data.change !== currentChangeRef.current) {
+      // 每条 SSE 消息都是独立脉冲，不做去重
+      if (data.change !== 0) {
         console.log(`Focus change detected: ${data.change}`);
         setChange(data.change);
-        currentChangeRef.current = data.change;
 
         if (data.change > 0 && beadsUsedRef.current > 0) {
           setCompletionPercentage(prev => {
@@ -285,25 +280,30 @@ export default function App() {
   };
 
   const handleStartToggle = async () => {
-    if (!focusEngineConnected) {
-      toast.error('FocusAI 引擎未连接', { description: '请先启动 FocusOS 网关' });
-      return;
+    const next = !isStarted;
+    setIsStarted(next);
+
+    if (next) {
+      toast.info('开始拼豆', { description: '专注时间已启动' });
+    } else {
+      toast.info('暂停拼豆', { description: '休息一下' });
     }
-    
-    try {
-      if (focusEngineRunning) {
-        await fetch(`${FOCUS_API_BASE}/stop`, { method: 'POST' });
-        toast.info('暂停监控', { description: '休息一下 ☕' });
-      } else {
-        await fetch(`${FOCUS_API_BASE}/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ goal: currentGoal || '专注工作' }),
-        });
-        toast.info('开始监控', { description: '专注时间已启动 🎯 豆子将随时间被消耗' });
+
+    // 如果引擎在线，同步控制引擎监控（失败不阻塞本地状态）
+    if (focusEngineConnected) {
+      try {
+        if (next) {
+          await fetch(`${FOCUS_API_BASE}/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ goal: currentGoal || '专注工作' }),
+          });
+        } else {
+          await fetch(`${FOCUS_API_BASE}/stop`, { method: 'POST' });
+        }
+      } catch {
+        // 引擎通信失败不影响本地拼豆
       }
-    } catch (error) {
-      toast.error('操作失败', { description: '无法与 FocusAI 引擎通信' });
     }
   };
 
@@ -368,14 +368,14 @@ export default function App() {
         isIroned={isIroned}
         isPreview={isPreview}
         pixels={pixels}
-        isStarted={focusEngineRunning}
+        isStarted={isStarted}
         completionPercentage={completionPercentage}
         change={change}
       />
 
       <ControlPanel
         isConnected={focusEngineConnected}
-        isStarted={focusEngineRunning}
+        isStarted={isStarted}
         isIroned={isIroned}
         isPreview={isPreview}
         beadsUsed={beadsUsed}
