@@ -9,7 +9,7 @@ import type { PixelData } from './components/BeadsBoard';
 import TimerWorker from '../workers/timer.worker?worker';
 
 const FOCUS_API_BASE = 'http://127.0.0.1:8765/api';
-const POLL_INTERVAL = 2000;
+const SSE_URL = `${FOCUS_API_BASE}/focus/changes`;
 
 export interface SaveData {
   version: string;
@@ -74,77 +74,97 @@ export default function App() {
     }
   }, [focusEngineRunning]);
 
-  // ==================== Page Visibility API ====================
-  // 页面从后台恢复时，立即触发一次轮询以同步最新状态
-  const pollNowRef = useRef<(() => void) | null>(null);
+  // ==================== SSE 实时监听引擎状态 ====================
+  const beadsUsedRef = useRef(beadsUsed);
+  beadsUsedRef.current = beadsUsed;
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && pollNowRef.current) {
-        pollNowRef.current();
+    let eventSource: EventSource | null = null;
+    let reconnectTimer: NodeJS.Timeout | null = null;
+    let disposed = false;
+
+    const applyStatus = (data: FocusStatus) => {
+      setFocusEngineConnected(true);
+      setFocusEngineRunning(data.running);
+      setFocusComment(data.comment);
+      setCurrentGoal(data.current_goal);
+
+      // 检测引擎从停止变为运行：重置 changeRef 以确保能接收新的 change
+      if (data.running && !prevRunningRef.current) {
+        currentChangeRef.current = 0;
+      }
+      prevRunningRef.current = data.running;
+
+      if (data.change !== 0 && data.change !== currentChangeRef.current) {
+        console.log(`Focus change detected: ${data.change}`);
+        setChange(data.change);
+        currentChangeRef.current = data.change;
+
+        if (data.change > 0 && beadsUsedRef.current > 0) {
+          setCompletionPercentage(prev => {
+            const addedPercent = (data.change * 3 / beadsUsedRef.current) * 100;
+            return Math.min(100, prev + addedPercent);
+          });
+        }
       }
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
 
-  // ==================== 引擎轮询 ====================
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-
-    const pollFocusStatus = async () => {
+    // 一次性 fetch 获取初始状态（SSE 建立前的快照）
+    const fetchInitialStatus = async () => {
       try {
-        const response = await fetch(`${FOCUS_API_BASE}/focus/score`, {
-          method: 'GET',
+        const res = await fetch(`${FOCUS_API_BASE}/focus/score`, {
           headers: { 'Accept': 'application/json' },
         });
+        if (res.ok) {
+          const data: FocusStatus = await res.json();
+          applyStatus(data);
+        }
+      } catch {
+        // SSE 会接管后续状态
+      }
+    };
 
-        if (!response.ok) throw new Error('API request failed');
+    const connect = () => {
+      if (disposed) return;
+      eventSource = new EventSource(SSE_URL);
 
-        const data: FocusStatus = await response.json();
+      eventSource.onopen = () => {
+        console.log('[SSE] 连接引擎成功');
         setFocusEngineConnected(true);
-        setFocusEngineRunning(data.running);
-        setFocusComment(data.comment);
-        setCurrentGoal(data.current_goal);
+      };
 
-        // 检测引擎从停止变为运行：重置 changeRef 以确保能接收新的 change
-        if (data.running && !prevRunningRef.current) {
-          currentChangeRef.current = 0;
+      eventSource.onmessage = (e) => {
+        try {
+          const data: FocusStatus = JSON.parse(e.data);
+          applyStatus(data);
+        } catch (err) {
+          console.warn('[SSE] 解析数据失败:', err);
         }
-        prevRunningRef.current = data.running;
+      };
 
-        if (data.change !== 0 && data.change !== currentChangeRef.current) {
-          console.log(`Focus change detected: ${data.change}`);
-          setChange(data.change);
-          currentChangeRef.current = data.change;
-
-          // 根据 change 自动推进专注百分比（此处假设 change > 0 时代表专注有效）
-          if (data.change > 0 && beadsUsed > 0) {
-            setCompletionPercentage(prev => {
-              // 假设每个 change 单位消耗 3 颗豆子
-              const addedPercent = (data.change * 3 / beadsUsed) * 100;
-              return Math.min(100, prev + addedPercent);
-            });
-          }
-        }
-
-      } catch (error) {
+      eventSource.onerror = () => {
+        console.warn('[SSE] 连接断开，5 秒后重试');
         setFocusEngineConnected(false);
         setFocusEngineRunning(false);
         setFocusComment('');
-      }
+        eventSource?.close();
+        eventSource = null;
+        // 手动重连（比浏览器默认重连可控）
+        if (!disposed) {
+          reconnectTimer = setTimeout(connect, 5000);
+        }
+      };
     };
 
-    // 保存引用以供 Visibility API 使用
-    pollNowRef.current = pollFocusStatus;
+    fetchInitialStatus();
+    connect();
 
-    pollFocusStatus();
-    intervalId = setInterval(pollFocusStatus, POLL_INTERVAL);
     return () => {
-      clearInterval(intervalId);
-      pollNowRef.current = null;
+      disposed = true;
+      eventSource?.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
     };
-  }, [beadsUsed]); // 依赖 beadsUsed 用于计算进度
+  }, []); // 无依赖 — beadsUsed 通过 ref 读取，避免重连
 
   const handleFileUpload = useCallback((file: File) => {
     if (file.type === 'application/json' || file.name.endsWith('.json')) {
