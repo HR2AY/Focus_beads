@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import * as THREE from 'three';
 import { getClosestColor, MAX_DIMENSION } from '../lib/palette';
 import type { PixelData } from './components/BeadsBoard';
+import TimerWorker from '../workers/timer.worker?worker';
 
 const FOCUS_API_BASE = 'http://127.0.0.1:8765/api';
 const POLL_INTERVAL = 2000;
@@ -42,30 +43,81 @@ export default function App() {
   const [totalElapsedSeconds, setTotalElapsedSeconds] = useState(0);
 
   const currentChangeRef = useRef<number>(0);
+  const prevRunningRef = useRef<boolean>(false);
+
+  // ==================== Web Worker 计时器 ====================
+  const timerWorkerRef = useRef<Worker | null>(null);
 
   useEffect(() => {
+    const worker = new TimerWorker();
+    timerWorkerRef.current = worker;
+
+    worker.onmessage = (e: MessageEvent) => {
+      if (e.data.type === 'tick') {
+        setTotalElapsedSeconds(e.data.totalSeconds);
+      }
+    };
+
+    return () => {
+      worker.terminate();
+      timerWorkerRef.current = null;
+    };
+  }, []);
+
+  // 引擎运行状态变化时，启停 Worker 计时器
+  useEffect(() => {
+    if (!timerWorkerRef.current) return;
+    if (focusEngineRunning) {
+      timerWorkerRef.current.postMessage({ type: 'start' });
+    } else {
+      timerWorkerRef.current.postMessage({ type: 'stop' });
+    }
+  }, [focusEngineRunning]);
+
+  // ==================== Page Visibility API ====================
+  // 页面从后台恢复时，立即触发一次轮询以同步最新状态
+  const pollNowRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && pollNowRef.current) {
+        pollNowRef.current();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  // ==================== 引擎轮询 ====================
+  useEffect(() => {
     let intervalId: NodeJS.Timeout;
-    
+
     const pollFocusStatus = async () => {
       try {
         const response = await fetch(`${FOCUS_API_BASE}/focus/score`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' },
         });
-        
+
         if (!response.ok) throw new Error('API request failed');
-        
+
         const data: FocusStatus = await response.json();
         setFocusEngineConnected(true);
         setFocusEngineRunning(data.running);
         setFocusComment(data.comment);
         setCurrentGoal(data.current_goal);
-        
+
+        // 检测引擎从停止变为运行：重置 changeRef 以确保能接收新的 change
+        if (data.running && !prevRunningRef.current) {
+          currentChangeRef.current = 0;
+        }
+        prevRunningRef.current = data.running;
+
         if (data.change !== 0 && data.change !== currentChangeRef.current) {
           console.log(`Focus change detected: ${data.change}`);
           setChange(data.change);
           currentChangeRef.current = data.change;
-          
+
           // 根据 change 自动推进专注百分比（此处假设 change > 0 时代表专注有效）
           if (data.change > 0 && beadsUsed > 0) {
             setCompletionPercentage(prev => {
@@ -75,27 +127,24 @@ export default function App() {
             });
           }
         }
-        
+
       } catch (error) {
         setFocusEngineConnected(false);
         setFocusEngineRunning(false);
         setFocusComment('');
       }
     };
-    
+
+    // 保存引用以供 Visibility API 使用
+    pollNowRef.current = pollFocusStatus;
+
     pollFocusStatus();
     intervalId = setInterval(pollFocusStatus, POLL_INTERVAL);
-    return () => clearInterval(intervalId);
+    return () => {
+      clearInterval(intervalId);
+      pollNowRef.current = null;
+    };
   }, [beadsUsed]); // 依赖 beadsUsed 用于计算进度
-
-  // 计时器：引擎运行时每秒累加
-  useEffect(() => {
-    if (!focusEngineRunning) return;
-    const interval = setInterval(() => {
-      setTotalElapsedSeconds(prev => prev + 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [focusEngineRunning]);
 
   const handleFileUpload = useCallback((file: File) => {
     if (file.type === 'application/json' || file.name.endsWith('.json')) {
@@ -122,6 +171,7 @@ export default function App() {
         setBeadsUsed(newPixels.length);
         setCompletionPercentage(0);
         setTotalElapsedSeconds(0);
+        timerWorkerRef.current?.postMessage({ type: 'reset' });
 
         toast.success('图片处理完成', { description: `已转换为 ${newPixels.length} 颗拼豆，开始专注后豆子会逐步出现` });
       };
@@ -153,7 +203,9 @@ export default function App() {
         setPixels(restoredPixels);
         setBeadsUsed(restoredPixels.length);
         setCompletionPercentage(Math.max(0, Math.min(100, data.completionPercentage)));
-        setTotalElapsedSeconds(typeof data.time === 'number' ? Math.max(0, Math.floor(data.time)) : 0);
+        const restoredSeconds = typeof data.time === 'number' ? Math.max(0, Math.floor(data.time)) : 0;
+        setTotalElapsedSeconds(restoredSeconds);
+        timerWorkerRef.current?.postMessage({ type: 'set', value: restoredSeconds });
 
         const restoredTime = typeof data.time === 'number' ? data.time : 0;
         const hrs = Math.floor(restoredTime / 3600);
@@ -213,10 +265,6 @@ export default function App() {
   };
 
   const handleStartToggle = async () => {
-    // 开始监控时，退出预览/熨烫，回到默认拼豆状态
-    if (isPreview) setIsPreview(false);
-    if (isIroned) setIsIroned(false);
-
     if (!focusEngineConnected) {
       toast.error('FocusAI 引擎未连接', { description: '请先启动 FocusOS 网关' });
       return;
