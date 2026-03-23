@@ -141,7 +141,7 @@ export async function generateShareImage(data: ShareImageData): Promise<Blob> {
   const SCALE = 2; // Retina 2x
 
   // 1. 加载底图模板
-  const template = await loadImage('/Template.png');
+  const template = await loadImage(`${import.meta.env.BASE_URL}Template.png`);
   const tw = template.naturalWidth;
   const th = template.naturalHeight;
 
